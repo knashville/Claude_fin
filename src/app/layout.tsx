@@ -1,6 +1,6 @@
 import type { Metadata } from "next";
 import "./globals.css";
-import Shell from "@/components/layout/Shell";
+import AppWrapper from "@/components/layout/AppWrapper";
 
 export const metadata: Metadata = {
   title: "ClearBooks",
@@ -15,7 +15,7 @@ export default function RootLayout({
   return (
     <html lang="en" className="h-full antialiased">
       <body className="min-h-full font-sans">
-        <Shell>{children}</Shell>
+        <AppWrapper>{children}</AppWrapper>
       </body>
     </html>
   );
