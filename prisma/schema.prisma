@@ -1,0 +1,103 @@
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "sqlite"
+  url      = env("DATABASE_URL")
+}
+
+model Account {
+  id             String        @id @default(uuid())
+  name           String
+  type           String        // checking, savings, credit_card
+  currentBalance Int           @default(0) // in cents
+  createdAt      DateTime      @default(now())
+  updatedAt      DateTime      @updatedAt
+  transactions   Transaction[]
+  importBatches  ImportBatch[]
+}
+
+model Transaction {
+  id               String       @id @default(uuid())
+  date             DateTime
+  amount           Int          // in cents, negative = expense, positive = income
+  merchant         String       // cleaned/normalized
+  rawMerchant      String       // original from CSV
+  description      String       @default("")
+  categoryId       String?
+  category         Category?    @relation(fields: [categoryId], references: [id])
+  accountId        String
+  account          Account      @relation(fields: [accountId], references: [id])
+  importBatchId    String?
+  importBatch      ImportBatch? @relation(fields: [importBatchId], references: [id])
+  dedupHash        String       @unique
+  isManualCategory Boolean      @default(false) // true if user manually set category
+  createdAt        DateTime     @default(now())
+  updatedAt        DateTime     @updatedAt
+
+  @@index([date])
+  @@index([categoryId])
+  @@index([accountId])
+  @@index([merchant])
+}
+
+model Category {
+  id           String               @id @default(uuid())
+  name         String               @unique
+  color        String               @default("#6B7280") // hex color
+  icon         String               @default("tag") // icon name
+  isIncome     Boolean              @default(false)
+  createdAt    DateTime             @default(now())
+  transactions Transaction[]
+  rules        CategorizationRule[]
+}
+
+model ImportBatch {
+  id            String        @id @default(uuid())
+  filename      String
+  accountId     String
+  account       Account       @relation(fields: [accountId], references: [id])
+  rowCount      Int           @default(0)
+  importedCount Int           @default(0)
+  skippedCount  Int           @default(0)
+  createdAt     DateTime      @default(now())
+  transactions  Transaction[]
+}
+
+model CategorizationRule {
+  id         String   @id @default(uuid())
+  pattern    String   // e.g. "SPOTIFY", "TRADER JOE"
+  field      String   @default("merchant") // merchant or rawMerchant
+  matchType  String   @default("contains") // contains, startsWith, exact
+  categoryId String
+  category   Category @relation(fields: [categoryId], references: [id])
+  priority   Int      @default(0) // higher = checked first
+  createdAt  DateTime @default(now())
+  updatedAt  DateTime @updatedAt
+
+  @@index([priority])
+}
+
+model RecurringPattern {
+  id               String   @id @default(uuid())
+  merchant         String
+  averageAmount    Int      // in cents
+  interval         String   // weekly, biweekly, monthly, quarterly, yearly
+  confidence       Float    @default(0.5)
+  lastSeen         DateTime
+  nextExpected     DateTime?
+  isConfirmed      Boolean  @default(false) // user confirmed
+  isDismissed      Boolean  @default(false) // user dismissed
+  transactionCount Int      @default(0)
+  createdAt        DateTime @default(now())
+  updatedAt        DateTime @updatedAt
+
+  @@index([merchant])
+}
+
+model Settings {
+  key       String   @id
+  value     String
+  updatedAt DateTime @updatedAt
+}
