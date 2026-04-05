@@ -8,14 +8,18 @@ datasource db {
 }
 
 model Account {
-  id             String        @id @default(uuid())
-  name           String
-  type           String        // checking, savings, credit_card
-  currentBalance Int           @default(0) // in cents
-  createdAt      DateTime      @default(now())
-  updatedAt      DateTime      @updatedAt
-  transactions   Transaction[]
-  importBatches  ImportBatch[]
+  id               String        @id @default(uuid())
+  name             String
+  type             String        // checking, savings, credit_card
+  currentBalance   Int           @default(0) // in cents
+  plaidAccessToken String?       // encrypted Plaid access token
+  plaidAccountId   String?       // Plaid account ID
+  plaidItemId      String?       // Plaid item ID
+  lastSynced       DateTime?     // last Plaid sync
+  createdAt        DateTime      @default(now())
+  updatedAt        DateTime      @updatedAt
+  transactions     Transaction[]
+  importBatches    ImportBatch[]
 }
 
 model Transaction {
