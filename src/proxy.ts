@@ -1,12 +1,11 @@
 import { NextRequest, NextResponse } from "next/server";
-import { createHash } from "crypto";
 
 const SESSION_COOKIE = "clearbooks_session";
 
 // Routes that don't require auth
 const PUBLIC_PATHS = ["/login", "/api/auth/"];
 
-export async function middleware(req: NextRequest) {
+export function proxy(req: NextRequest) {
   const { pathname } = req.nextUrl;
 
   // Allow public paths
