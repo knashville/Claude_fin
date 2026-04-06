@@ -13,8 +13,8 @@ export function proxy(req: NextRequest) {
     return NextResponse.next();
   }
 
-  // Allow static assets
-  if (pathname.startsWith("/_next/") || pathname.startsWith("/favicon.ico")) {
+  // Allow static assets and service worker
+  if (pathname.startsWith("/_next/") || pathname === "/favicon.ico" || pathname === "/sw.js" || pathname === "/manifest.json" || pathname.startsWith("/icon-")) {
     return NextResponse.next();
   }
 
