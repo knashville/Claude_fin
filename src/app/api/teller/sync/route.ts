@@ -1,11 +1,24 @@
-import { NextResponse } from "next/server";
+import { NextRequest, NextResponse } from "next/server";
 import { prisma } from "@/lib/db";
 import { getTransactions, getAccountBalances } from "@/lib/teller";
 import { createHash } from "crypto";
 import { normalizeMerchant } from "@/lib/utils";
 import { categorizeTransaction } from "@/lib/categorizer";
 
+// GET endpoint for cron jobs with secret key auth
+export async function GET(req: NextRequest) {
+  const secret = req.nextUrl.searchParams.get("secret");
+  if (!secret || secret !== process.env.SYNC_SECRET) {
+    return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
+  }
+  return runSync();
+}
+
 export async function POST() {
+  return runSync();
+}
+
+async function runSync() {
   try {
     // Get all Teller-linked accounts
     const accounts = await prisma.account.findMany({

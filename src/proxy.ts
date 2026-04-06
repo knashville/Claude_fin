@@ -3,7 +3,7 @@ import { NextRequest, NextResponse } from "next/server";
 const SESSION_COOKIE = "clearbooks_session";
 
 // Routes that don't require auth
-const PUBLIC_PATHS = ["/login", "/api/auth/"];
+const PUBLIC_PATHS = ["/login", "/api/auth/", "/api/teller/sync"];
 
 export function proxy(req: NextRequest) {
   const { pathname } = req.nextUrl;
