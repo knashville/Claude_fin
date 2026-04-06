@@ -14,8 +14,8 @@ interface Account {
 
 declare global {
   interface Window {
-    Plaid?: {
-      create: (config: Record<string, unknown>) => { open: () => void };
+    TellerConnect?: {
+      setup: (config: Record<string, unknown>) => { open: () => void };
     };
   }
 }
@@ -29,89 +29,105 @@ export default function SettingsPage() {
   const [passwordMsg, setPasswordMsg] = useState("");
   const [editingBalance, setEditingBalance] = useState<string | null>(null);
   const [balanceInput, setBalanceInput] = useState("");
-  const [plaidLoading, setPlaidLoading] = useState(false);
-  const [plaidMsg, setPlaidMsg] = useState("");
+  const [connectLoading, setConnectLoading] = useState(false);
+  const [connectMsg, setConnectMsg] = useState("");
   const [syncing, setSyncing] = useState(false);
   const [syncMsg, setSyncMsg] = useState("");
+  const [tellerAppId, setTellerAppId] = useState("");
+  const [tellerEnv, setTellerEnv] = useState("sandbox");
 
   const fetchData = () => {
     fetch("/api/accounts").then((r) => r.json()).then(setAccounts);
     fetch("/api/settings").then((r) => r.json()).then(setSettings);
   };
 
-  useEffect(() => { fetchData(); }, []);
-
-  // Load Plaid Link script
   useEffect(() => {
-    if (document.getElementById("plaid-link-script")) return;
+    fetchData();
+    // Get Teller config
+    fetch("/api/teller/config").then((r) => r.json()).then((data) => {
+      setTellerAppId(data.appId);
+      setTellerEnv(data.environment);
+    });
+  }, []);
+
+  // Load Teller Connect script
+  useEffect(() => {
+    if (document.getElementById("teller-connect-script")) return;
     const script = document.createElement("script");
-    script.id = "plaid-link-script";
-    script.src = "https://cdn.plaid.com/link/v2/stable/link-initialize.js";
+    script.id = "teller-connect-script";
+    script.src = "https://cdn.teller.io/connect/connect.js";
     script.async = true;
     document.head.appendChild(script);
   }, []);
 
   const connectBank = useCallback(async () => {
-    setPlaidLoading(true);
-    setPlaidMsg("");
+    setConnectLoading(true);
+    setConnectMsg("");
+
+    if (!tellerAppId) {
+      setConnectMsg("Teller app ID not configured. Add TELLER_APP_ID to .env");
+      setConnectLoading(false);
+      return;
+    }
+
+    if (!window.TellerConnect) {
+      setConnectMsg("Teller Connect is still loading. Try again in a moment.");
+      setConnectLoading(false);
+      return;
+    }
 
     try {
-      const res = await fetch("/api/plaid/create-link-token", { method: "POST" });
-      const data = await res.json();
+      const handler = window.TellerConnect.setup({
+        applicationId: tellerAppId,
+        environment: tellerEnv,
+        onSuccess: async (enrollment: { accessToken: string; enrollment: { id: string; institution: { name: string } } }) => {
+          setConnectMsg("Connected! Syncing accounts...");
 
-      if (!res.ok) {
-        setPlaidMsg(data.error || "Failed to start bank connection");
-        setPlaidLoading(false);
-        return;
-      }
-
-      if (!window.Plaid) {
-        setPlaidMsg("Plaid Link is still loading. Try again in a moment.");
-        setPlaidLoading(false);
-        return;
-      }
-
-      const handler = window.Plaid.create({
-        token: data.link_token,
-        onSuccess: async (publicToken: string) => {
-          const exchangeRes = await fetch("/api/plaid/exchange-token", {
+          const enrollRes = await fetch("/api/teller/enroll", {
             method: "POST",
             headers: { "Content-Type": "application/json" },
-            body: JSON.stringify({ public_token: publicToken }),
+            body: JSON.stringify({
+              accessToken: enrollment.accessToken,
+              enrollmentId: enrollment.enrollment.id,
+            }),
           });
-          const exchangeData = await exchangeRes.json();
+          const enrollData = await enrollRes.json();
 
-          if (exchangeRes.ok) {
-            setPlaidMsg(`Connected ${exchangeData.accounts} account(s). Syncing transactions...`);
-            // Auto-sync after connecting
-            const syncRes = await fetch("/api/plaid/sync", { method: "POST" });
+          if (enrollRes.ok) {
+            setConnectMsg(`Connected ${enrollData.accounts} account(s) from ${enrollment.enrollment.institution.name}. Syncing transactions...`);
+            // Auto-sync
+            const syncRes = await fetch("/api/teller/sync", { method: "POST" });
             const syncData = await syncRes.json();
             if (syncRes.ok) {
-              setPlaidMsg(`Connected ${exchangeData.accounts} account(s). Imported ${syncData.imported} transactions.`);
+              setConnectMsg(`Connected ${enrollData.accounts} account(s). Imported ${syncData.imported} transactions.`);
             }
             fetchData();
           } else {
-            setPlaidMsg(exchangeData.error || "Failed to connect");
+            setConnectMsg(enrollData.error || "Failed to connect");
           }
-          setPlaidLoading(false);
+          setConnectLoading(false);
         },
         onExit: () => {
-          setPlaidLoading(false);
+          setConnectLoading(false);
+        },
+        onFailure: (failure: { type: string; message: string }) => {
+          setConnectMsg(`Connection failed: ${failure.message}`);
+          setConnectLoading(false);
         },
       });
 
       handler.open();
     } catch {
-      setPlaidMsg("Failed to connect bank");
-      setPlaidLoading(false);
+      setConnectMsg("Failed to open bank connection");
+      setConnectLoading(false);
     }
-  }, []);
+  }, [tellerAppId, tellerEnv]);
 
   const syncTransactions = async () => {
     setSyncing(true);
     setSyncMsg("");
     try {
-      const res = await fetch("/api/plaid/sync", { method: "POST" });
+      const res = await fetch("/api/teller/sync", { method: "POST" });
       const data = await res.json();
       if (res.ok) {
         setSyncMsg(`Synced: ${data.imported} new, ${data.skipped} duplicates skipped`);
@@ -187,16 +203,16 @@ export default function SettingsPage() {
       <div className="bg-[var(--card-bg)] border border-[var(--border)] rounded-lg p-5 mb-6">
         <h3 className="text-sm font-medium mb-2">Bank Connection</h3>
         <p className="text-xs text-[var(--muted)] mb-4">
-          Connect your bank accounts to automatically sync transactions via Plaid.
+          Connect your bank accounts to automatically sync transactions via Teller.
         </p>
 
         <div className="flex gap-3">
           <button
             onClick={connectBank}
-            disabled={plaidLoading}
+            disabled={connectLoading}
             className="px-4 py-2 text-sm bg-[var(--accent)] text-white rounded-md hover:opacity-90 disabled:opacity-50"
           >
-            {plaidLoading ? "Connecting..." : "Connect a Bank"}
+            {connectLoading ? "Connecting..." : "Connect a Bank"}
           </button>
           {hasLinkedAccounts && (
             <button
@@ -209,8 +225,8 @@ export default function SettingsPage() {
           )}
         </div>
 
-        {plaidMsg && (
-          <p className="text-xs mt-3 text-green-600">{plaidMsg}</p>
+        {connectMsg && (
+          <p className="text-xs mt-3 text-green-600">{connectMsg}</p>
         )}
         {syncMsg && (
           <p className="text-xs mt-3 text-blue-600">{syncMsg}</p>
@@ -327,7 +343,7 @@ export default function SettingsPage() {
       <div className="bg-[var(--card-bg)] border border-[var(--border)] rounded-lg p-5">
         <h3 className="text-sm font-medium mb-2">About</h3>
         <p className="text-xs text-[var(--muted)]">
-          ClearBooks — Personal Finance Tracker. Data stored locally in SQLite. Bank sync via Plaid.
+          ClearBooks — Personal Finance Tracker. Data stored locally in SQLite. Bank sync via Teller.
         </p>
       </div>
     </div>
