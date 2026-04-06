@@ -5,6 +5,13 @@ import AppWrapper from "@/components/layout/AppWrapper";
 export const metadata: Metadata = {
   title: "ClearBooks",
   description: "Personal finance tracker",
+  manifest: "/manifest.json",
+  themeColor: "#3b82f6",
+  appleWebApp: {
+    capable: true,
+    statusBarStyle: "default",
+    title: "ClearBooks",
+  },
 };
 
 export default function RootLayout({
