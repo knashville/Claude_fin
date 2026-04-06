@@ -6,20 +6,24 @@ import fs from "fs";
 
 const TELLER_API_BASE = "https://api.teller.io";
 
-// mTLS agent for development/production (not needed for sandbox)
+let cachedAgent: https.Agent | null = null;
+
 function getTlsAgent(): https.Agent | undefined {
+  if (cachedAgent) return cachedAgent;
+
   const certPath = process.env.TELLER_CERT_PATH;
   const keyPath = process.env.TELLER_KEY_PATH;
 
   if (!certPath || !keyPath) return undefined;
 
   try {
-    return new https.Agent({
+    cachedAgent = new https.Agent({
       cert: fs.readFileSync(certPath),
       key: fs.readFileSync(keyPath),
     });
-  } catch {
-    console.warn("Teller mTLS certs not found, falling back to no-cert mode (sandbox only)");
+    return cachedAgent;
+  } catch (e) {
+    console.warn("Teller mTLS certs not found:", e);
     return undefined;
   }
 }
@@ -30,26 +34,45 @@ interface TellerRequestOptions {
   method?: string;
 }
 
-async function tellerRequest<T>({ path, accessToken, method = "GET" }: TellerRequestOptions): Promise<T> {
-  const url = `${TELLER_API_BASE}${path}`;
-
-  const headers: Record<string, string> = {
-    Authorization: `Basic ${Buffer.from(`${accessToken}:`).toString("base64")}`,
-    "Content-Type": "application/json",
-  };
-
+function tellerRequest<T>({ path, accessToken, method = "GET" }: TellerRequestOptions): Promise<T> {
+  const url = new URL(path, TELLER_API_BASE);
+  const auth = Buffer.from(`${accessToken}:`).toString("base64");
   const agent = getTlsAgent();
-  const fetchOptions: RequestInit & { agent?: https.Agent } = { method, headers };
-  if (agent) fetchOptions.agent = agent;
 
-  const res = await fetch(url, fetchOptions as RequestInit);
+  return new Promise((resolve, reject) => {
+    const options: https.RequestOptions = {
+      hostname: url.hostname,
+      path: url.pathname,
+      method,
+      headers: {
+        Authorization: `Basic ${auth}`,
+        "Content-Type": "application/json",
+      },
+    };
 
-  if (!res.ok) {
-    const text = await res.text();
-    throw new Error(`Teller API error (${res.status}): ${text}`);
-  }
+    if (agent) {
+      options.agent = agent;
+    }
 
-  return res.json();
+    const req = https.request(options, (res) => {
+      let data = "";
+      res.on("data", (chunk) => { data += chunk; });
+      res.on("end", () => {
+        if (res.statusCode && res.statusCode >= 400) {
+          reject(new Error(`Teller API error (${res.statusCode}): ${data}`));
+          return;
+        }
+        try {
+          resolve(JSON.parse(data) as T);
+        } catch {
+          reject(new Error(`Teller API: invalid JSON response: ${data}`));
+        }
+      });
+    });
+
+    req.on("error", reject);
+    req.end();
+  });
 }
 
 export interface TellerAccount {
@@ -94,7 +117,6 @@ export async function getTransactions(accessToken: string, accountId: string): P
   return tellerRequest({ path: `/accounts/${accountId}/transactions`, accessToken });
 }
 
-// Application ID for Teller Connect
 export function getTellerAppId(): string {
   return process.env.TELLER_APP_ID || "";
 }
