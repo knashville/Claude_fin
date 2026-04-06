@@ -1,7 +1,28 @@
 // Teller.io API client
 // Docs: https://teller.io/docs
 
+import https from "https";
+import fs from "fs";
+
 const TELLER_API_BASE = "https://api.teller.io";
+
+// mTLS agent for development/production (not needed for sandbox)
+function getTlsAgent(): https.Agent | undefined {
+  const certPath = process.env.TELLER_CERT_PATH;
+  const keyPath = process.env.TELLER_KEY_PATH;
+
+  if (!certPath || !keyPath) return undefined;
+
+  try {
+    return new https.Agent({
+      cert: fs.readFileSync(certPath),
+      key: fs.readFileSync(keyPath),
+    });
+  } catch {
+    console.warn("Teller mTLS certs not found, falling back to no-cert mode (sandbox only)");
+    return undefined;
+  }
+}
 
 interface TellerRequestOptions {
   path: string;
@@ -17,7 +38,11 @@ async function tellerRequest<T>({ path, accessToken, method = "GET" }: TellerReq
     "Content-Type": "application/json",
   };
 
-  const res = await fetch(url, { method, headers });
+  const agent = getTlsAgent();
+  const fetchOptions: RequestInit & { agent?: https.Agent } = { method, headers };
+  if (agent) fetchOptions.agent = agent;
+
+  const res = await fetch(url, fetchOptions as RequestInit);
 
   if (!res.ok) {
     const text = await res.text();
