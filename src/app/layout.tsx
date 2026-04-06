@@ -21,6 +21,13 @@ export default function RootLayout({
 }>) {
   return (
     <html lang="en" className="h-full antialiased">
+      <head>
+        <script
+          dangerouslySetInnerHTML={{
+            __html: `if ('serviceWorker' in navigator) { navigator.serviceWorker.register('/sw.js'); }`,
+          }}
+        />
+      </head>
       <body className="min-h-full font-sans">
         <AppWrapper>{children}</AppWrapper>
       </body>
